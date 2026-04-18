@@ -39,19 +39,18 @@ export const InstrumentSchema = z.object({
 });
 
 export const OrderSchema = z.object({
-  id: z.number(),
+  id: z.number().or(z.string()),
   ticker: z.string(),
   status: z.string(),
   type: z.string(),
-  side: z.string(),
-  quantity: z.number(),
-  value: z.number(),
-  filledValue: z.number().optional(),
-  currency: z.string(),
+  side: z.string().optional(),
+  quantity: z.number().nullable().optional(),
+  value: z.number().nullable().optional(),
+  filledQuantity: z.number().nullable().optional(),
+  filledValue: z.number().nullable().optional(),
   limitPrice: z.number().nullable().optional(),
   stopPrice: z.number().nullable().optional(),
-  createdAt: z.string(),
-  instrument: InstrumentSchema.optional(),
+  creationTime: z.string().nullable().optional(),
 });
 
 export type Order = z.infer<typeof OrderSchema>;

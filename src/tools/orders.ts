@@ -8,8 +8,8 @@ import { z } from "zod";
 function formatOrder(order: ReturnType<typeof OrderSchema.parse>): string {
   const status = order.status.toUpperCase();
   const type = order.type.toUpperCase();
-  const side = order.side.toUpperCase();
-  const qty = order.quantity;
+  const side = order.side?.toUpperCase() ?? "ORDER";
+  const qty = order.quantity ?? order.value ?? "unknown";
   const price = order.limitPrice ?? order.stopPrice ?? "market";
   return `${order.ticker} ${side} ${qty} @ ${price} (${type}) - ${status}`;
 }
@@ -37,10 +37,16 @@ export function registerOrderTools(server: McpServer, clientConfig: Trading212Cl
         }
 
         const validated = result.orders.map((o) => OrderSchema.parse(o));
-        const lines = validated.map((o) => `${o.ticker} ${o.side} ${o.quantity} @ ${o.limitPrice ?? o.stopPrice ?? "market"} (${o.type}) - ${o.status}`);
+        const lines = validated.map((o) => {
+          const amountStr = o.quantity ? `${o.quantity} shares` : (o.value ? `£${o.value} value` : "Unknown amount");
+          const priceStr = o.limitPrice ? `@ ${o.limitPrice}` : (o.stopPrice ? `@ stop ${o.stopPrice}` : "@ market");
+          const sideStr = o.side ? o.side.toUpperCase() : "ORDER";
+          
+          return `- [ID: ${o.id}] ${o.ticker} ${sideStr} ${amountStr} ${priceStr} (${o.type}) - Status: ${o.status}`;
+        });
 
         return {
-          content: [{ type: "text", text: `Pending Orders (${validated.length}):\n${lines.join("\n")}` }],
+          content: [{ type: "text", text: `Found ${validated.length} pending orders:\n` + lines.join("\n") }],
         };
       } catch (error) {
         const suggestion = getActionableSuggestion(error);
@@ -69,11 +75,11 @@ export function registerOrderTools(server: McpServer, clientConfig: Trading212Cl
         const text = `Order ${validated.id}:
 - Ticker: ${validated.ticker}
 - Type: ${validated.type.toUpperCase()}
-- Side: ${validated.side.toUpperCase()}
-- Quantity: ${validated.quantity}
+- Side: ${validated.side?.toUpperCase() ?? "UNKNOWN"}
+- Quantity: ${validated.quantity ?? "N/A"}
 - ${validated.limitPrice ? `Limit Price: ${validated.limitPrice}` : validated.stopPrice ? `Stop Price: ${validated.stopPrice}` : "Market Order"}
 - Status: ${validated.status.toUpperCase()}
-- Created: ${validated.createdAt}`;
+- Created: ${validated.creationTime ?? "Unknown"}`;
 
         return {
           content: [{ type: "text", text }],
