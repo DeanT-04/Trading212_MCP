@@ -3,13 +3,8 @@
   "mcp": {
     "trading212": {
       "type": "local",
-      "command": ["node", "dist/index.js"],
-      "enabled": true,
-      "environment": {
-        "TRADING212_API_KEY": "{env:TRADING212_API_KEY}",
-        "TRADING212_SECRET": "{env:TRADING212_SECRET}",
-        "TRADING212_LIVE_MODE": "{env:TRADING212_LIVE_MODE}"
-      }
+      "command": ["npx", "tsx", "src/index.ts"],
+      "enabled": true
     }
   }
 }

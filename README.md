@@ -86,18 +86,13 @@ Add to your project's `opencode.json`:
     "trading212": {
       "type": "local",
       "command": ["npx", "-y", "trading212-mcp-server"],
-      "enabled": true,
-      "environment": {
-        "TRADING212_API_KEY": "your_api_key",
-        "TRADING212_SECRET": "your_secret",
-        "TRADING212_LIVE_MODE": "false"
-      }
+      "enabled": true
     }
   }
 }
 ```
 
-> **Note:** The included `opencode.json` has placeholder values - update with your actual API credentials.
+> **Note:** API credentials are loaded from the `.env` file - update `.env` with your actual credentials.
 
 ## Configuration
 
@@ -228,19 +223,20 @@ Place a limit order (execute at specified price or better).
 **Parameters:**
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `instrumentId` | string | Yes | Trading instrument ticker (e.g., "AAPL", "BTC.USD") |
-| `quantity` | number | Yes | Number of shares (positive integer) |
+| `ticker` | string | Yes | Trading instrument ticker (e.g., "AAPL_US_EQ") |
+| `quantity` | number | Yes | Number of shares |
 | `limitPrice` | number | Yes | Limit price per share |
-| `timeInForce` | string | No | Expiration: `day`, `good_until_cancelled`, `at_the_open`, `at_the_close` |
+| `timeValidity` | string | No | Expiration: `DAY`, `GOOD_TILL_CANCEL` |
 
 **Example Request:**
 ```json
 {
   "name": "place_limit_order",
   "arguments": {
-    "instrumentId": "AAPL",
+    "ticker": "AAPL_US_EQ",
     "quantity": 10,
-    "limitPrice": 150.00
+    "limitPrice": 150.00,
+    "timeValidity": "DAY"
   }
 }
 ```
@@ -254,17 +250,18 @@ Place a market order (execute immediately at best available price).
 **Parameters:**
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `instrumentId` | string | Yes | Trading instrument ticker |
+| `ticker` | string | Yes | Trading instrument ticker (e.g., "AAPL_US_EQ") |
 | `quantity` | number | Yes | Number of shares |
-| `timeInForce` | string | No | Expiration: `day`, `good_until_cancelled`, `at_the_open`, `at_the_close` |
+| `timeValidity` | string | No | Expiration: `DAY`, `GOOD_TILL_CANCEL` |
 
 **Example Request:**
 ```json
 {
   "name": "place_market_order",
   "arguments": {
-    "instrumentId": "AAPL",
-    "quantity": 5
+    "ticker": "AAPL_US_EQ",
+    "quantity": 5,
+    "timeValidity": "DAY"
   }
 }
 ```
@@ -273,24 +270,25 @@ Place a market order (execute immediately at best available price).
 
 ### place_stop_order
 
-Place a stop order (trigger when price reaches specified level).
+Place a stop order (trigger at specified price).
 
 **Parameters:**
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `instrumentId` | string | Yes | Trading instrument ticker |
+| `ticker` | string | Yes | Trading instrument ticker (e.g., "TSLA_US_EQ") |
 | `quantity` | number | Yes | Number of shares |
-| `triggerPrice` | number | Yes | Trigger price |
-| `timeInForce` | string | No | Expiration: `day`, `good_until_cancelled`, `at_the_open`, `at_the_close` |
+| `stopPrice` | number | Yes | Trigger price to activate the order |
+| `timeValidity` | string | No | Expiration: `DAY`, `GOOD_TILL_CANCEL` |
 
 **Example Request:**
 ```json
 {
   "name": "place_stop_order",
   "arguments": {
-    "instrumentId": "TSLA",
+    "ticker": "TSLA_US_EQ",
     "quantity": 10,
-    "triggerPrice": 145.00
+    "stopPrice": 145.00,
+    "timeValidity": "DAY"
   }
 }
 ```
@@ -299,26 +297,27 @@ Place a stop order (trigger when price reaches specified level).
 
 ### place_stop_limit_order
 
-Place a stop-limit order (stop triggered then executes at limit price).
+Place a stop-limit order (trigger then execute at limit price).
 
 **Parameters:**
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `instrumentId` | string | Yes | Trading instrument ticker |
+| `ticker` | string | Yes | Trading instrument ticker (e.g., "TSLA_US_EQ") |
 | `quantity` | number | Yes | Number of shares |
-| `limitPrice` | number | Yes | Limit price |
-| `triggerPrice` | number | Yes | Trigger price |
-| `timeInForce` | string | No | Expiration: `day`, `good_until_cancelled`, `at_the_open`, `at_the_close` |
+| `limitPrice` | number | Yes | Limit price per share |
+| `stopPrice` | number | Yes | Trigger price to activate the order |
+| `timeValidity` | string | No | Expiration: `DAY`, `GOOD_TILL_CANCEL` |
 
 **Example Request:**
 ```json
 {
   "name": "place_stop_limit_order",
   "arguments": {
-    "instrumentId": "TSLA",
+    "ticker": "TSLA_US_EQ",
     "quantity": 10,
     "limitPrice": 139.50,
-    "triggerPrice": 140.00
+    "stopPrice": 140.00,
+    "timeValidity": "DAY"
   }
 }
 ```

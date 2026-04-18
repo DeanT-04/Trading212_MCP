@@ -56,7 +56,7 @@ export class Trading212Client {
     const reset = headers["x-ratelimit-reset"];
 
     if (limit && remaining) {
-      console.log(`[Trading212] Rate limit: ${remaining}/${limit} (reset in ${reset}s)`);
+      console.error(`[Trading212] Rate limit: ${remaining}/${limit} (reset in ${reset}s)`);
     }
   }
 

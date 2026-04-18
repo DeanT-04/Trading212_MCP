@@ -38,13 +38,13 @@ async function main() {
   const transport = new StdioServerTransport();
 
   process.on("SIGINT", async () => {
-    console.log("\n[Trading212 MCP] Shutting down...");
+    console.error("\n[Trading212 MCP] Shutting down...");
     await server.close();
     process.exit(0);
   });
 
   await server.connect(transport);
-  console.log(`[Trading212 MCP] Server running on stdio (demo mode: ${!liveMode})`);
+  console.error(`[Trading212 MCP] Server running on stdio (demo mode: ${!liveMode})`);
 }
 
 main().catch((error) => {
