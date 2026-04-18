@@ -10,7 +10,7 @@ A Model Context Protocol (MCP) server for Trading212 brokerage API. Enables AI a
 
 - **Full Trading212 API Integration** - Access accounts, positions, orders, and trading operations
 - **9 Trading Tools** - Comprehensive coverage of core Trading212 functionality
-- **MCP Protocol Compliant** - Works with any MCP-compatible client (Claude Desktop, Cursor, etc.)
+- **MCP Protocol Compliant** - Works with any MCP-compatible client (Claude Desktop, Cursor, OpenCode, etc.)
 - **TypeScript** - Fully typed for excellent developer experience
 - **stdio Transport** - Simple local deployment
 - **Demo Mode First** - Safe testing via paper trading before live trading
@@ -73,7 +73,31 @@ Add to your `claude_desktop_config.json`:
 
 #### Cursor
 
-Add to your MCP settings in Cursor preferences via Settings > M CP Servers.
+Add to your MCP settings in Cursor preferences via Settings > MCP Servers.
+
+#### OpenCode
+
+Add to your project's `opencode.json`:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "trading212": {
+      "type": "local",
+      "command": ["npx", "-y", "trading212-mcp-server"],
+      "enabled": true,
+      "environment": {
+        "TRADING212_API_KEY": "your_api_key",
+        "TRADING212_SECRET": "your_secret",
+        "TRADING212_LIVE_MODE": "false"
+      }
+    }
+  }
+}
+```
+
+> **Note:** The included `opencode.json` has placeholder values - update with your actual API credentials.
 
 ## Configuration
 

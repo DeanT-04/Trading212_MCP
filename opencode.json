@@ -1,0 +1,15 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "trading212": {
+      "type": "local",
+      "command": ["npx", "-y", "trading212-mcp-server"],
+      "enabled": true,
+      "environment": {
+        "TRADING212_API_KEY": "",
+        "TRADING212_SECRET": "",
+        "TRADING212_LIVE_MODE": "false"
+      }
+    }
+  }
+}
