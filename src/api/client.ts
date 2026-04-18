@@ -86,56 +86,56 @@ export class Trading212Client {
     return response.data;
   }
 
-  async placeLimitOrder(instrumentId: string, quantity: number, limitPrice: number, timeInForce?: string): Promise<Order> {
+  async placeLimitOrder(ticker: string, quantity: number, limitPrice: number, timeValidity?: string): Promise<Order> {
     const response = await this.client.post("/equity/orders/limit", {
-      instrumentId,
+      ticker,
       quantity,
       limitPrice,
-      timeInForce,
+      timeValidity,
     });
     this.updateRateLimitHeaders(response.headers as unknown as Record<string, string>);
     return response.data;
   }
 
-  async placeMarketOrder(instrumentId: string, quantity: number, timeInForce?: string): Promise<Order> {
+  async placeMarketOrder(ticker: string, quantity: number, timeValidity?: string): Promise<Order> {
     const response = await this.client.post("/equity/orders/market", {
-      instrumentId,
+      ticker,
       quantity,
-      timeInForce,
+      timeValidity,
     });
     this.updateRateLimitHeaders(response.headers as unknown as Record<string, string>);
     return response.data;
   }
 
   async placeStopOrder(
-    instrumentId: string,
+    ticker: string,
     quantity: number,
-    triggerPrice: number,
-    timeInForce?: string
+    stopPrice: number,
+    timeValidity?: string
   ): Promise<Order> {
     const response = await this.client.post("/equity/orders/stop", {
-      instrumentId,
+      ticker,
       quantity,
-      triggerPrice,
-      timeInForce,
+      stopPrice,
+      timeValidity,
     });
     this.updateRateLimitHeaders(response.headers as unknown as Record<string, string>);
     return response.data;
   }
 
   async placeStopLimitOrder(
-    instrumentId: string,
+    ticker: string,
     quantity: number,
     limitPrice: number,
-    triggerPrice: number,
-    timeInForce?: string
+    stopPrice: number,
+    timeValidity?: string
   ): Promise<Order> {
     const response = await this.client.post("/equity/orders/stop_limit", {
-      instrumentId,
+      ticker,
       quantity,
       limitPrice,
-      triggerPrice,
-      timeInForce,
+      stopPrice,
+      timeValidity,
     });
     this.updateRateLimitHeaders(response.headers as unknown as Record<string, string>);
     return response.data;

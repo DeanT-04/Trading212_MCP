@@ -18,10 +18,16 @@ export function registerAccountTools(server: McpServer, clientConfig: Trading212
 
         const validated = AccountSummarySchema.parse(summary);
 
+        const totalCash = validated.cash.availableToTrade + validated.cash.reservedForOrders;
+        const totalInvestments = validated.investments.currentValue;
         const text = `Account Summary:
 - Account ID: ${validated.id}
 - Currency: ${validated.currency}
-- Cash Balance: ${validated.currency === "USD" ? "$" : validated.currency}${validated.cash.toFixed(2)}`;
+- Available to Trade: ${validated.currency === "USD" ? "$" : validated.currency === "GBP" ? "£" : validated.currency}${validated.cash.availableToTrade.toFixed(2)}
+- Reserved for Orders: ${validated.currency === "GBP" ? "£" : validated.currency}${validated.cash.reservedForOrders.toFixed(2)}
+- Total Value: ${validated.currency === "GBP" ? "£" : validated.currency}${validated.totalValue.toFixed(2)}
+- Investments Value: ${validated.currency === "GBP" ? "£" : validated.currency}${totalInvestments.toFixed(2)}
+- Unrealized P/L: ${validated.investments.unrealizedProfitLoss >= 0 ? "+" : ""}${validated.currency === "GBP" ? "£" : validated.currency}${validated.investments.unrealizedProfitLoss.toFixed(2)}`;
 
         return {
           content: [{ type: "text", text }],

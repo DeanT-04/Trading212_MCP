@@ -1,15 +1,26 @@
 import { z } from "zod";
 
 export const AccountSummarySchema = z.object({
-  id: z.string(),
+  id: z.number(),
   currency: z.string(),
-  cash: z.number(),
+  totalValue: z.number(),
+  cash: z.object({
+    availableToTrade: z.number(),
+    reservedForOrders: z.number(),
+    inPies: z.number(),
+  }),
+  investments: z.object({
+    currentValue: z.number(),
+    totalCost: z.number(),
+    realizedProfitLoss: z.number(),
+    unrealizedProfitLoss: z.number(),
+  }),
 });
 
 export type AccountSummary = z.infer<typeof AccountSummarySchema>;
 
 export const PositionSchema = z.object({
-  instrumentId: z.string(),
+  ticker: z.string(),
   instrumentName: z.string(),
   quantity: z.number(),
   averagePrice: z.number(),
@@ -20,29 +31,40 @@ export const PositionSchema = z.object({
 
 export type Position = z.infer<typeof PositionSchema>;
 
+export const InstrumentSchema = z.object({
+  ticker: z.string(),
+  name: z.string(),
+  isin: z.string().optional(),
+  currency: z.string(),
+});
+
 export const OrderSchema = z.object({
-  id: z.string(),
-  instrumentId: z.string(),
-  status: z.enum(["pending", "triggered", "filled", "cancelled"]),
-  type: z.enum(["limit", "market", "stop", "stop_limit"]),
-  side: z.enum(["buy", "sell"]),
+  id: z.number(),
+  ticker: z.string(),
+  status: z.string(),
+  type: z.string(),
+  side: z.string(),
   quantity: z.number(),
-  triggerPrice: z.number().nullable(),
-  limitPrice: z.number().nullable(),
+  value: z.number(),
+  filledValue: z.number().optional(),
+  currency: z.string(),
+  limitPrice: z.number().nullable().optional(),
+  stopPrice: z.number().nullable().optional(),
   createdAt: z.string(),
+  instrument: InstrumentSchema.optional(),
 });
 
 export type Order = z.infer<typeof OrderSchema>;
 
 export const CreateOrderSchema = z.object({
-  instrumentId: z.string().describe("Trading instrument ticker (e.g., AAPL, BTC.USD)"),
-  quantity: z.number().int().positive().describe("Number of shares to trade"),
+  ticker: z.string().describe("Trading instrument ticker (e.g., AAPL_US_EQ)"),
+  quantity: z.number().positive().describe("Number of shares to trade"),
   limitPrice: z.number().positive().optional().describe("Limit price for limit/stop-limit orders"),
-  triggerPrice: z.number().positive().optional().describe("Trigger price for stop/stop-limit orders"),
-  timeInForce: z
-    .enum(["day", "good_until_cancelled", "at_the_open", "at_the_close"])
+  stopPrice: z.number().positive().optional().describe("Stop price for stop/stop-limit orders"),
+  timeValidity: z
+    .enum(["DAY", "GOOD_TILL_CANCEL"])
     .optional()
-    .describe("Order time expiration"),
+    .describe("Order time validity: DAY or GOOD_TILL_CANCEL"),
 });
 
 export type CreateOrder = z.infer<typeof CreateOrderSchema>;

@@ -10,8 +10,8 @@ function formatOrder(order: ReturnType<typeof OrderSchema.parse>): string {
   const type = order.type.toUpperCase();
   const side = order.side.toUpperCase();
   const qty = order.quantity;
-  const price = order.limitPrice ?? order.triggerPrice ?? "market";
-  return `${order.instrumentId} ${side} ${qty} @ ${price} (${type}) - ${status}`;
+  const price = order.limitPrice ?? order.stopPrice ?? "market";
+  return `${order.ticker} ${side} ${qty} @ ${price} (${type}) - ${status}`;
 }
 
 export function registerOrderTools(server: McpServer, clientConfig: Trading212ClientConfig): void {
@@ -30,14 +30,14 @@ export function registerOrderTools(server: McpServer, clientConfig: Trading212Cl
         const params = getPaginationParams({ limit, cursor });
         const result = await client.getPendingOrders(params);
 
-        if (result.orders.length === 0) {
+        if (!result.orders || result.orders.length === 0) {
           return {
             content: [{ type: "text", text: "No pending orders found." }],
           };
         }
 
         const validated = result.orders.map((o) => OrderSchema.parse(o));
-        const lines = validated.map(formatOrder);
+        const lines = validated.map((o) => `${o.ticker} ${o.side} ${o.quantity} @ ${o.limitPrice ?? o.stopPrice ?? "market"} (${o.type}) - ${o.status}`);
 
         return {
           content: [{ type: "text", text: `Pending Orders (${validated.length}):\n${lines.join("\n")}` }],
@@ -67,11 +67,11 @@ export function registerOrderTools(server: McpServer, clientConfig: Trading212Cl
         const validated = OrderSchema.parse(order);
 
         const text = `Order ${validated.id}:
-- Instrument: ${validated.instrumentId}
+- Ticker: ${validated.ticker}
 - Type: ${validated.type.toUpperCase()}
 - Side: ${validated.side.toUpperCase()}
 - Quantity: ${validated.quantity}
-- ${validated.limitPrice ? `Limit Price: ${validated.limitPrice}` : validated.triggerPrice ? `Trigger Price: ${validated.triggerPrice}` : "Market Order"}
+- ${validated.limitPrice ? `Limit Price: ${validated.limitPrice}` : validated.stopPrice ? `Stop Price: ${validated.stopPrice}` : "Market Order"}
 - Status: ${validated.status.toUpperCase()}
 - Created: ${validated.createdAt}`;
 
@@ -93,28 +93,29 @@ export function registerOrderTools(server: McpServer, clientConfig: Trading212Cl
     {
       description: "Place a limit order (buy/sell at specified price or better)",
       inputSchema: z.object({
-        instrumentId: z.string().describe("Trading instrument ticker (e.g., AAPL, BTC.USD)"),
-        quantity: z.number().int().positive().describe("Number of shares to trade (positive integer)"),
+        ticker: z.string().describe("Trading instrument ticker (e.g., AAPL_US_EQ)"),
+        quantity: z.number().positive().describe("Number of shares to trade"),
         limitPrice: z.number().positive().describe("Limit price per share"),
-        timeInForce: z
-          .enum(["day", "good_until_cancelled", "at_the_open", "at_the_close"])
-          .describe("Order expiration: day, good_until_cancelled, at_the_open, at_the_close"),
+        timeValidity: z
+          .enum(["DAY", "GOOD_TILL_CANCEL"])
+          .optional()
+          .describe("Order expiration: DAY or GOOD_TILL_CANCEL"),
       }),
     },
     async ({
-      instrumentId,
+      ticker,
       quantity,
       limitPrice,
-      timeInForce,
+      timeValidity,
     }: {
-      instrumentId: string;
+      ticker: string;
       quantity: number;
       limitPrice: number;
-      timeInForce?: string;
+      timeValidity?: string;
     }) => {
       try {
         const client = createClient(clientConfig);
-        const order = await client.placeLimitOrder(instrumentId, quantity, limitPrice, timeInForce);
+        const order = await client.placeLimitOrder(ticker, quantity, limitPrice, timeValidity);
         const validated = OrderSchema.parse(order);
 
         return {
@@ -140,25 +141,26 @@ export function registerOrderTools(server: McpServer, clientConfig: Trading212Cl
     {
       description: "Place a market order (execute immediately at best available price)",
       inputSchema: z.object({
-        instrumentId: z.string().describe("Trading instrument ticker (e.g., AAPL, BTC.USD)"),
-        quantity: z.number().int().positive().describe("Number of shares to trade (positive integer)"),
-        timeInForce: z
-          .enum(["day", "good_until_cancelled", "at_the_open", "at_the_close"])
-          .describe("Order expiration: day, good_until_cancelled, at_the_open, at_the_close"),
+        ticker: z.string().describe("Trading instrument ticker (e.g., AAPL_US_EQ)"),
+        quantity: z.number().positive().describe("Number of shares to trade"),
+        timeValidity: z
+          .enum(["DAY", "GOOD_TILL_CANCEL"])
+          .optional()
+          .describe("Order expiration: DAY or GOOD_TILL_CANCEL"),
       }),
     },
     async ({
-      instrumentId,
+      ticker,
       quantity,
-      timeInForce,
+      timeValidity,
     }: {
-      instrumentId: string;
+      ticker: string;
       quantity: number;
-      timeInForce?: string;
+      timeValidity?: string;
     }) => {
       try {
         const client = createClient(clientConfig);
-        const order = await client.placeMarketOrder(instrumentId, quantity, timeInForce);
+        const order = await client.placeMarketOrder(ticker, quantity, timeValidity);
         const validated = OrderSchema.parse(order);
 
         return {
@@ -184,28 +186,29 @@ export function registerOrderTools(server: McpServer, clientConfig: Trading212Cl
     {
       description: "Place a stop order (trigger at specified price)",
       inputSchema: z.object({
-        instrumentId: z.string().describe("Trading instrument ticker (e.g., AAPL, BTC.USD)"),
-        quantity: z.number().int().positive().describe("Number of shares to trade (positive integer)"),
-        triggerPrice: z.number().positive().describe("Trigger price to activate the order"),
-        timeInForce: z
-          .enum(["day", "good_until_cancelled", "at_the_open", "at_the_close"])
-          .describe("Order expiration: day, good_until_cancelled, at_the_open, at_the_close"),
+        ticker: z.string().describe("Trading instrument ticker (e.g., AAPL_US_EQ)"),
+        quantity: z.number().positive().describe("Number of shares to trade"),
+        stopPrice: z.number().positive().describe("Trigger price to activate the order"),
+        timeValidity: z
+          .enum(["DAY", "GOOD_TILL_CANCEL"])
+          .optional()
+          .describe("Order expiration: DAY or GOOD_TILL_CANCEL"),
       }),
     },
     async ({
-      instrumentId,
+      ticker,
       quantity,
-      triggerPrice,
-      timeInForce,
+      stopPrice,
+      timeValidity,
     }: {
-      instrumentId: string;
+      ticker: string;
       quantity: number;
-      triggerPrice: number;
-      timeInForce?: string;
+      stopPrice: number;
+      timeValidity?: string;
     }) => {
       try {
         const client = createClient(clientConfig);
-        const order = await client.placeStopOrder(instrumentId, quantity, triggerPrice, timeInForce);
+        const order = await client.placeStopOrder(ticker, quantity, stopPrice, timeValidity);
         const validated = OrderSchema.parse(order);
 
         return {
@@ -231,31 +234,32 @@ export function registerOrderTools(server: McpServer, clientConfig: Trading212Cl
     {
       description: "Place a stop-limit order (trigger then execute at limit price)",
       inputSchema: z.object({
-        instrumentId: z.string().describe("Trading instrument ticker (e.g., AAPL, BTC.USD)"),
-        quantity: z.number().int().positive().describe("Number of shares to trade (positive integer)"),
-        limitPrice: z.number().positive().describe("Maximum price to pay (buy) or minimum to accept (sell)"),
-        triggerPrice: z.number().positive().describe("Trigger price to activate the order"),
-        timeInForce: z
-          .enum(["day", "good_until_cancelled", "at_the_open", "at_the_close"])
-          .describe("Order expiration: day, good_until_cancelled, at_the_open, at_the_close"),
+        ticker: z.string().describe("Trading instrument ticker (e.g., AAPL_US_EQ)"),
+        quantity: z.number().positive().describe("Number of shares to trade"),
+        limitPrice: z.number().positive().describe("Limit price per share"),
+        stopPrice: z.number().positive().describe("Trigger price to activate the order"),
+        timeValidity: z
+          .enum(["DAY", "GOOD_TILL_CANCEL"])
+          .optional()
+          .describe("Order expiration: DAY or GOOD_TILL_CANCEL"),
       }),
     },
     async ({
-      instrumentId,
+      ticker,
       quantity,
       limitPrice,
-      triggerPrice,
-      timeInForce,
+      stopPrice,
+      timeValidity,
     }: {
-      instrumentId: string;
+      ticker: string;
       quantity: number;
       limitPrice: number;
-      triggerPrice: number;
-      timeInForce?: string;
+      stopPrice: number;
+      timeValidity?: string;
     }) => {
       try {
         const client = createClient(clientConfig);
-        const order = await client.placeStopLimitOrder(instrumentId, quantity, limitPrice, triggerPrice, timeInForce);
+        const order = await client.placeStopLimitOrder(ticker, quantity, limitPrice, stopPrice, timeValidity);
         const validated = OrderSchema.parse(order);
 
         return {

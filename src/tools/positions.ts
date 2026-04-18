@@ -21,7 +21,7 @@ export function registerPositionTools(server: McpServer, clientConfig: Trading21
         const params = getPaginationParams({ limit, cursor });
         const result = await client.getPositions(params);
 
-        if (result.positions.length === 0) {
+        if (!result.positions || result.positions.length === 0) {
           return {
             content: [{ type: "text", text: "No open positions found." }],
           };
@@ -32,7 +32,7 @@ export function registerPositionTools(server: McpServer, clientConfig: Trading21
         const lines = validated.map((p) => {
           const pl = p.profitLoss >= 0 ? `+${p.profitLoss.toFixed(2)}` : p.profitLoss.toFixed(2);
           const plPct = p.profitLossPercentage >= 0 ? `+${p.profitLossPercentage.toFixed(2)}%` : `${p.profitLossPercentage.toFixed(2)}%`;
-          return `${p.instrumentId}: ${p.quantity} shares @ ${p.averagePrice.toFixed(2)} (now ${p.currentPrice.toFixed(2)}) | P/L: ${pl} (${plPct})`;
+          return `${p.ticker}: ${p.quantity} shares @ ${p.averagePrice.toFixed(2)} (now ${p.currentPrice.toFixed(2)}) | P/L: ${pl} (${plPct})`;
         });
 
         const text = `Open Positions (${validated.length}):\n${lines.join("\n")}`;
