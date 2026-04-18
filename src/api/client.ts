@@ -1,8 +1,11 @@
-import axios, { AxiosInstance, AxiosError } from "axios";
+import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig, AxiosResponse } from "axios";
 import type { AccountSummary, Position, Order, PaginationParams } from "./types.js";
 
 const DEMO_BASE_URL = "https://demo.trading212.com";
 const LIVE_BASE_URL = "https://live.trading212.com";
+
+let singletonClient: Trading212Client | null = null;
+let singletonConfig: Trading212ClientConfig | null = null;
 
 export interface Trading212ClientConfig {
   apiKey: string;
@@ -26,10 +29,49 @@ export class Trading212Client {
     });
 
     this.client.interceptors.response.use(undefined, this.handleError.bind(this));
+    this.client.interceptors.request.use(this.addRetryDelay.bind(this));
   }
 
-  private handleError(error: AxiosError): never {
+  private retryAfter: number = 0;
+  private lastRequestTime: number = 0;
+  private readonly MIN_REQUEST_INTERVAL = 5000;
+
+  private async addRetryDelay(config: InternalAxiosRequestConfig): Promise<InternalAxiosRequestConfig> {
+    const now = Date.now();
+    const timeSinceLastRequest = now - this.lastRequestTime;
+    
+    if (timeSinceLastRequest < this.MIN_REQUEST_INTERVAL) {
+      const waitTime = this.MIN_REQUEST_INTERVAL - timeSinceLastRequest;
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+    }
+    
+    this.lastRequestTime = Date.now();
+    
+    if (this.retryAfter > 0) {
+      const resetTime = this.retryAfter * 1000;
+      if (now < this.retryAfter) {
+        await new Promise(resolve => setTimeout(resolve, resetTime));
+      }
+      this.retryAfter = 0;
+    }
+
+    return config;
+  }
+
+  private async handleError(error: AxiosError): Promise<AxiosResponse> {
     const status = error.response?.status;
+    
+    if (status === 429) {
+      const retryAfterHeader = error.response?.headers["x-ratelimit-retry-after"];
+      this.retryAfter = retryAfterHeader ? parseInt(retryAfterHeader, 10) : 5;
+      
+      const waitTime = this.retryAfter * 1000;
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+      this.retryAfter = 0;
+      
+      return this.client.request(error.config!);
+    }
+
     const data = error.response?.data as Record<string, unknown> | undefined;
     const message = typeof data?.error === "string" ? data.error : data?.message as string | undefined;
 
@@ -40,9 +82,6 @@ export class Trading212Client {
         throw new Error("Access forbidden. Your account may not have API access enabled.");
       case 404:
         throw new Error("Resource not found. Check the instrument ID or order ID.");
-      case 429:
-        const retryAfter = error.response?.headers["x-ratelimit-retry-after"];
-        throw new Error(`Rate limit exceeded. Retry after ${retryAfter} seconds.`);
       case 400:
         throw new Error(`Bad request: ${message || "Invalid parameters"}`);
       default:
@@ -70,14 +109,20 @@ export class Trading212Client {
     const params = { limit: pagination?.limit ?? 20, cursor: pagination?.cursor };
     const response = await this.client.get("/equity/positions", { params });
     this.updateRateLimitHeaders(response.headers as unknown as Record<string, string>);
-    return response.data;
+
+    const data = response.data;
+    const positions = Array.isArray(data) ? data : (data.items || data.positions || []);
+    return { positions, cursor: data.nextPagePath || data.cursor };
   }
 
   async getPendingOrders(pagination?: PaginationParams): Promise<{ orders: Order[]; cursor?: string }> {
     const params = { limit: pagination?.limit ?? 20, cursor: pagination?.cursor };
     const response = await this.client.get("/equity/orders", { params });
     this.updateRateLimitHeaders(response.headers as unknown as Record<string, string>);
-    return response.data;
+
+    const data = response.data;
+    const orders = Array.isArray(data) ? data : (data.items || data.orders || []);
+    return { orders, cursor: data.nextPagePath || data.cursor };
   }
 
   async getOrder(orderId: string): Promise<Order> {
@@ -149,5 +194,10 @@ export class Trading212Client {
 }
 
 export function createClient(config: Trading212ClientConfig): Trading212Client {
-  return new Trading212Client(config);
+  if (singletonClient && singletonConfig?.apiKey === config.apiKey && singletonConfig?.secret === config.secret) {
+    return singletonClient;
+  }
+  singletonClient = new Trading212Client(config);
+  singletonConfig = config;
+  return singletonClient;
 }

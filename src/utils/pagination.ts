@@ -21,7 +21,7 @@ export function buildCursorResponse<T>(
 
 export function getPaginationParams(input: { limit?: number; cursor?: string }) {
   return {
-    limit: Math.min(input.limit ?? 20, 50),
+    limit: Math.min(input.limit ?? 50, 50),
     cursor: input.cursor,
   };
 }
