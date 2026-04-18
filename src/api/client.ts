@@ -1,0 +1,153 @@
+import axios, { AxiosInstance, AxiosError } from "axios";
+import type { AccountSummary, Position, Order, PaginationParams } from "./types.js";
+
+const DEMO_BASE_URL = "https://demo.trading212.com";
+const LIVE_BASE_URL = "https://live.trading212.com";
+
+export interface Trading212ClientConfig {
+  apiKey: string;
+  secret: string;
+  liveMode?: boolean;
+}
+
+export class Trading212Client {
+  private client: AxiosInstance;
+
+  constructor(config: Trading212ClientConfig) {
+    const baseURL = config.liveMode ? LIVE_BASE_URL : DEMO_BASE_URL;
+    const auth = Buffer.from(`${config.apiKey}:${config.secret}`).toString("base64");
+
+    this.client = axios.create({
+      baseURL: `${baseURL}/api/v0`,
+      headers: {
+        Authorization: `Basic ${auth}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    this.client.interceptors.response.use(undefined, this.handleError.bind(this));
+  }
+
+  private handleError(error: AxiosError): never {
+    const status = error.response?.status;
+    const data = error.response?.data as Record<string, unknown> | undefined;
+    const message = typeof data?.error === "string" ? data.error : data?.message as string | undefined;
+
+    switch (status) {
+      case 401:
+        throw new Error("Authentication failed. Check your API_KEY and SECRET.");
+      case 403:
+        throw new Error("Access forbidden. Your account may not have API access enabled.");
+      case 404:
+        throw new Error("Resource not found. Check the instrument ID or order ID.");
+      case 429:
+        const retryAfter = error.response?.headers["x-ratelimit-retry-after"];
+        throw new Error(`Rate limit exceeded. Retry after ${retryAfter} seconds.`);
+      case 400:
+        throw new Error(`Bad request: ${message || "Invalid parameters"}`);
+      default:
+        throw new Error(`API error (${status}): ${message || error.message}`);
+    }
+  }
+
+  private updateRateLimitHeaders(headers: Record<string, string>): void {
+    const limit = headers["x-ratelimit-limit"];
+    const remaining = headers["x-ratelimit-remaining"];
+    const reset = headers["x-ratelimit-reset"];
+
+    if (limit && remaining) {
+      console.log(`[Trading212] Rate limit: ${remaining}/${limit} (reset in ${reset}s)`);
+    }
+  }
+
+  async getAccountSummary(): Promise<AccountSummary> {
+    const response = await this.client.get("/equity/account/summary");
+    this.updateRateLimitHeaders(response.headers as unknown as Record<string, string>);
+    return response.data;
+  }
+
+  async getPositions(pagination?: PaginationParams): Promise<{ positions: Position[]; cursor?: string }> {
+    const params = { limit: pagination?.limit ?? 20, cursor: pagination?.cursor };
+    const response = await this.client.get("/equity/positions", { params });
+    this.updateRateLimitHeaders(response.headers as unknown as Record<string, string>);
+    return response.data;
+  }
+
+  async getPendingOrders(pagination?: PaginationParams): Promise<{ orders: Order[]; cursor?: string }> {
+    const params = { limit: pagination?.limit ?? 20, cursor: pagination?.cursor };
+    const response = await this.client.get("/equity/orders", { params });
+    this.updateRateLimitHeaders(response.headers as unknown as Record<string, string>);
+    return response.data;
+  }
+
+  async getOrder(orderId: string): Promise<Order> {
+    const response = await this.client.get(`/equity/orders/${orderId}`);
+    this.updateRateLimitHeaders(response.headers as unknown as Record<string, string>);
+    return response.data;
+  }
+
+  async placeLimitOrder(instrumentId: string, quantity: number, limitPrice: number, timeInForce?: string): Promise<Order> {
+    const response = await this.client.post("/equity/orders/limit", {
+      instrumentId,
+      quantity,
+      limitPrice,
+      timeInForce,
+    });
+    this.updateRateLimitHeaders(response.headers as unknown as Record<string, string>);
+    return response.data;
+  }
+
+  async placeMarketOrder(instrumentId: string, quantity: number, timeInForce?: string): Promise<Order> {
+    const response = await this.client.post("/equity/orders/market", {
+      instrumentId,
+      quantity,
+      timeInForce,
+    });
+    this.updateRateLimitHeaders(response.headers as unknown as Record<string, string>);
+    return response.data;
+  }
+
+  async placeStopOrder(
+    instrumentId: string,
+    quantity: number,
+    triggerPrice: number,
+    timeInForce?: string
+  ): Promise<Order> {
+    const response = await this.client.post("/equity/orders/stop", {
+      instrumentId,
+      quantity,
+      triggerPrice,
+      timeInForce,
+    });
+    this.updateRateLimitHeaders(response.headers as unknown as Record<string, string>);
+    return response.data;
+  }
+
+  async placeStopLimitOrder(
+    instrumentId: string,
+    quantity: number,
+    limitPrice: number,
+    triggerPrice: number,
+    timeInForce?: string
+  ): Promise<Order> {
+    const response = await this.client.post("/equity/orders/stop_limit", {
+      instrumentId,
+      quantity,
+      limitPrice,
+      triggerPrice,
+      timeInForce,
+    });
+    this.updateRateLimitHeaders(response.headers as unknown as Record<string, string>);
+    return response.data;
+  }
+
+  async cancelOrder(orderId: string): Promise<{ success: boolean }> {
+    const response = await this.client.delete(`/equity/orders/${orderId}`);
+    this.updateRateLimitHeaders(response.headers as unknown as Record<string, string>);
+    return response.data;
+  }
+}
+
+export function createClient(config: Trading212ClientConfig): Trading212Client {
+  return new Trading212Client(config);
+}
