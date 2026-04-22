@@ -1,36 +1,73 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { createClient, type Trading212ClientConfig } from "../api/client.js";
+import { Trading212Client, createClient, type Trading212ClientConfig } from "../api/client.js";
 import { AccountSummarySchema } from "../api/types.js";
 import { formatError, getActionableSuggestion } from "../utils/errors.js";
+import { getTrading212Source, Trading212SourceSchema } from "../utils/mcp.js";
 import { z } from "zod";
 
+type ClientFactory = (config: Trading212ClientConfig) => Trading212Client;
+
+const AccountSummaryOutputSchema = z.object({
+  source: Trading212SourceSchema,
+  accountSummary: AccountSummarySchema,
+});
+
+function formatCurrency(currency: string, amount: number): string {
+  const symbol = currency === "USD" ? "$" : currency === "GBP" ? "£" : `${currency} `;
+  return `${symbol}${amount.toFixed(2)}`;
+}
+
 export function registerAccountTools(server: McpServer, clientConfig: Trading212ClientConfig): void {
+  registerAccountToolsWithDeps(server, clientConfig, {});
+}
+
+export function registerAccountToolsWithDeps(
+  server: McpServer,
+  clientConfig: Trading212ClientConfig,
+  deps: { clientFactory?: ClientFactory }
+): void {
+  const clientFactory = deps.clientFactory ?? createClient;
+
   server.registerTool(
-    "get_account_summary",
+    "trading212_get_account_summary",
     {
       description: "Get account summary including account ID, currency, and cash balance",
       inputSchema: z.object({}),
+      outputSchema: AccountSummaryOutputSchema,
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
     },
     async () => {
       try {
-        const client = createClient(clientConfig);
+        const client = clientFactory(clientConfig);
         const summary = await client.getAccountSummary();
 
         const validated = AccountSummarySchema.parse(summary);
 
-        const totalCash = validated.cash.availableToTrade + validated.cash.reservedForOrders;
         const totalInvestments = validated.investments.currentValue;
-        const text = `Account Summary:
-- Account ID: ${validated.id}
-- Currency: ${validated.currency}
-- Available to Trade: ${validated.currency === "USD" ? "$" : validated.currency === "GBP" ? "£" : validated.currency}${validated.cash.availableToTrade.toFixed(2)}
-- Reserved for Orders: ${validated.currency === "GBP" ? "£" : validated.currency}${validated.cash.reservedForOrders.toFixed(2)}
-- Total Value: ${validated.currency === "GBP" ? "£" : validated.currency}${validated.totalValue.toFixed(2)}
-- Investments Value: ${validated.currency === "GBP" ? "£" : validated.currency}${totalInvestments.toFixed(2)}
-- Unrealized P/L: ${validated.investments.unrealizedProfitLoss >= 0 ? "+" : ""}${validated.currency === "GBP" ? "£" : validated.currency}${validated.investments.unrealizedProfitLoss.toFixed(2)}`;
+        const plPrefix = validated.investments.unrealizedProfitLoss >= 0 ? "+" : "";
+        const text = [
+          `Account ${validated.id} (${validated.currency})`,
+          `Available: ${formatCurrency(validated.currency, validated.cash.availableToTrade)} | Reserved: ${formatCurrency(
+            validated.currency,
+            validated.cash.reservedForOrders
+          )}`,
+          `Total: ${formatCurrency(validated.currency, validated.totalValue)} | Investments: ${formatCurrency(
+            validated.currency,
+            totalInvestments
+          )} | Unrealized P/L: ${plPrefix}${formatCurrency(validated.currency, validated.investments.unrealizedProfitLoss)}`,
+        ].join("\n");
 
         return {
           content: [{ type: "text", text }],
+          structuredContent: {
+            source: getTrading212Source(clientConfig),
+            accountSummary: validated,
+          },
         };
       } catch (error) {
         const suggestion = getActionableSuggestion(error);

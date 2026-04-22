@@ -9,11 +9,11 @@ A Model Context Protocol (MCP) server for Trading212 brokerage API. Enables AI a
 ## Features
 
 - **Full Trading212 API Integration** - Access accounts, positions, orders, and trading operations
-- **9 Trading Tools** - Comprehensive coverage of core Trading212 functionality
+- **13 Trading Tools** - Comprehensive coverage of core Trading212 functionality
 - **MCP Protocol Compliant** - Works with any MCP-compatible client (Claude Desktop, Cursor, OpenCode, etc.)
 - **TypeScript** - Fully typed for excellent developer experience
 - **stdio Transport** - Simple local deployment
-- **Demo Mode First** - Safe testing via paper trading before live trading
+- **Live Mode Default** - Defaults to live trading; demo/paper trading is opt-in
 - **Security First** - API credentials stored locally, never sent to external servers
 
 ## Requirements
@@ -48,7 +48,7 @@ npx -y trading212-mcp-server
 3. Generate a new API key and secret
 4. Copy credentials securely
 
-> **Note:** Start with **demo mode** (paper trading) to test integration safely.
+> **Note:** You can opt into **demo/paper trading** by setting `TRADING212_LIVE_MODE=false`.
 
 ### Step 2: Configure MCP Client
 
@@ -104,7 +104,7 @@ The server uses the following environment variables:
 |----------|----------|-------------|
 | `TRADING212_API_KEY` | Yes | Your Trading212 API key |
 | `TRADING212_SECRET` | Yes | Your Trading212 API secret |
-| `TRADING212_LIVE_MODE` | No | Set to `true` for live trading (default: `false` = demo/paper trading) |
+| `TRADING212_LIVE_MODE` | No | Defaults to `true` (live). Set to `false` for demo/paper trading |
 
 ### Using a `.env` File
 
@@ -113,235 +113,41 @@ Create a `.env` file in your project directory:
 ```bash
 TRADING212_API_KEY=your_api_key_here
 TRADING212_SECRET=your_secret_here
-TRADING212_LIVE_MODE=false
+TRADING212_LIVE_MODE=true
 ```
 
 > **Security Note:** Never commit your API credentials to version control. The `.env.example` file is included as a template - copy it to `.env` and ensure `.env` is in your `.gitignore`.
 
 ## Tools
 
-This MCP server exposes 9 trading tools:
+This MCP server exposes 13 Trading212 tools. All tools return compact text plus machine-readable data in `structuredContent`.
 
-### get_account_summary
+### Read-only tools
 
-Get account overview including account ID, currency, and cash balance.
+- `trading212_get_account_summary` (no args)
+- `trading212_get_positions` (`ticker?`)
+- `trading212_get_pending_orders` (`limit?`)
+- `trading212_get_order` (`orderId`)
 
-**Parameters:** None
+### Trading tools (real trades in live mode)
 
-**Example Request:**
-```json
-{
-  "name": "get_account_summary",
-  "arguments": {}
-}
-```
+Buy:
 
-**Example Response:**
-```
-Account Summary:
-- Account ID: ACC-XXXXXXXX
-- Currency: USD
-- Cash Balance: $10000.00
-```
+- `trading212_place_limit_buy_order` (`ticker`, `quantity`, `limitPrice`, `timeValidity?`)
+- `trading212_place_market_buy_order` (`ticker`, `quantity`, `timeValidity?`)
+- `trading212_place_stop_buy_order` (`ticker`, `quantity`, `stopPrice`, `timeValidity?`)
+- `trading212_place_stop_limit_buy_order` (`ticker`, `quantity`, `limitPrice`, `stopPrice`, `timeValidity?`)
 
----
+Sell (separate tools; `quantity` stays positive and will be converted to a SELL order):
 
-### get_positions
+- `trading212_place_limit_sell_order` (`ticker`, `quantity`, `limitPrice`, `timeValidity?`)
+- `trading212_place_market_sell_order` (`ticker`, `quantity`, `timeValidity?`)
+- `trading212_place_stop_sell_order` (`ticker`, `quantity`, `stopPrice`, `timeValidity?`)
+- `trading212_place_stop_limit_sell_order` (`ticker`, `quantity`, `limitPrice`, `stopPrice`, `timeValidity?`)
 
-Get all open positions with quantity, average price, current price, and profit/loss.
+Other:
 
-**Parameters:**
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `limit` | number | No | Max positions to return (1-50, default: 20) |
-| `cursor` | string | No | Pagination cursor |
-
-**Example Request:**
-```json
-{
-  "name": "get_positions",
-  "arguments": {
-    "limit": 10
-  }
-}
-```
-
-**Example Response:**
-```
-Open Positions (3):
-AAPL: 10 shares @ 150.00 (now 155.50) | P/L: +55.00 (+36.67%)
-TSLA: 5 shares @ 200.00 (now 195.00) | P/L: -25.00 (-25.00%)
-```
-
----
-
-### get_pending_orders
-
-Get all pending (not yet executed) orders.
-
-**Parameters:**
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `limit` | number | No | Max orders to return (1-50, default: 20) |
-| `cursor` | string | No | Pagination cursor |
-
-**Example Request:**
-```json
-{
-  "name": "get_pending_orders",
-  "arguments": {}
-}
-```
-
----
-
-### get_order
-
-Get details of a specific pending order by ID.
-
-**Parameters:**
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `orderId` | string | Yes | The order ID to retrieve |
-
-**Example Request:**
-```json
-{
-  "name": "get_order",
-  "arguments": {
-    "orderId": "ORD-XXXXXXXX"
-  }
-}
-```
-
----
-
-### place_limit_order
-
-Place a limit order (execute at specified price or better).
-
-**Parameters:**
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `ticker` | string | Yes | Trading instrument ticker (e.g., "AAPL_US_EQ") |
-| `quantity` | number | Yes | Number of shares |
-| `limitPrice` | number | Yes | Limit price per share |
-| `timeValidity` | string | No | Expiration: `DAY`, `GOOD_TILL_CANCEL` |
-
-**Example Request:**
-```json
-{
-  "name": "place_limit_order",
-  "arguments": {
-    "ticker": "AAPL_US_EQ",
-    "quantity": 10,
-    "limitPrice": 150.00,
-    "timeValidity": "DAY"
-  }
-}
-```
-
----
-
-### place_market_order
-
-Place a market order (execute immediately at best available price).
-
-**Parameters:**
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `ticker` | string | Yes | Trading instrument ticker (e.g., "AAPL_US_EQ") |
-| `quantity` | number | Yes | Number of shares |
-| `timeValidity` | string | No | Expiration: `DAY`, `GOOD_TILL_CANCEL` |
-
-**Example Request:**
-```json
-{
-  "name": "place_market_order",
-  "arguments": {
-    "ticker": "AAPL_US_EQ",
-    "quantity": 5,
-    "timeValidity": "DAY"
-  }
-}
-```
-
----
-
-### place_stop_order
-
-Place a stop order (trigger at specified price).
-
-**Parameters:**
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `ticker` | string | Yes | Trading instrument ticker (e.g., "TSLA_US_EQ") |
-| `quantity` | number | Yes | Number of shares |
-| `stopPrice` | number | Yes | Trigger price to activate the order |
-| `timeValidity` | string | No | Expiration: `DAY`, `GOOD_TILL_CANCEL` |
-
-**Example Request:**
-```json
-{
-  "name": "place_stop_order",
-  "arguments": {
-    "ticker": "TSLA_US_EQ",
-    "quantity": 10,
-    "stopPrice": 145.00,
-    "timeValidity": "DAY"
-  }
-}
-```
-
----
-
-### place_stop_limit_order
-
-Place a stop-limit order (trigger then execute at limit price).
-
-**Parameters:**
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `ticker` | string | Yes | Trading instrument ticker (e.g., "TSLA_US_EQ") |
-| `quantity` | number | Yes | Number of shares |
-| `limitPrice` | number | Yes | Limit price per share |
-| `stopPrice` | number | Yes | Trigger price to activate the order |
-| `timeValidity` | string | No | Expiration: `DAY`, `GOOD_TILL_CANCEL` |
-
-**Example Request:**
-```json
-{
-  "name": "place_stop_limit_order",
-  "arguments": {
-    "ticker": "TSLA_US_EQ",
-    "quantity": 10,
-    "limitPrice": 139.50,
-    "stopPrice": 140.00,
-    "timeValidity": "DAY"
-  }
-}
-```
-
----
-
-### cancel_order
-
-Cancel a pending order by ID.
-
-**Parameters:**
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `orderId` | string | Yes | The order ID to cancel |
-
-**Example Request:**
-```json
-{
-  "name": "cancel_order",
-  "arguments": {
-    "orderId": "ORD-XXXXXXXX"
-  }
-}
-```
+- `trading212_cancel_order` (`orderId`)
 
 ## Examples
 
@@ -349,37 +155,36 @@ Cancel a pending order by ID.
 
 > **User:** "What's my current cash balance?"
 
-Claude uses `get_account_summary` and returns:
+Claude uses `trading212_get_account_summary` and returns:
 ```
-Account Summary:
-- Account ID: ACC-XXXXXXXX
-- Currency: USD
-- Cash Balance: $10000.00
+Account 1 (USD)
+Available: $100.00 | Reserved: $0.00
+Total: $1000.00 | Investments: $900.00 | Unrealized P/L: +$100.00
 ```
 
 ### Viewing Open Positions
 
 > **User:** "Show me all my current positions"
 
-Claude uses `get_positions` and displays your portfolio with P/L.
+Claude uses `trading212_get_positions` and displays your portfolio with P/L.
 
 ### Placing a Trade
 
 > **User:** "Buy 10 shares of AAPL at market price"
 
-Claude uses `place_market_order` to execute immediately.
+Claude uses `trading212_place_market_buy_order` to execute immediately.
 
 ### Setting a Stop Loss
 
 > **User:** "Set a stop order to sell 5 shares of TSLA if it drops below $150"
 
-Claude uses `place_stop_order` to set the protective stop.
+Claude uses `trading212_place_stop_sell_order` to set the protective stop.
 
 ### Canceling an Order
 
 > **User:** "Cancel my pending AAPL order"
 
-Claude uses `cancel_order` to remove the order.
+Claude uses `trading212_cancel_order` to remove the order.
 
 ## Development
 
@@ -413,13 +218,14 @@ Trading212_MCP/
 │   ├── index.ts           # Main entry point
 │   ├── api/
 │   │   ├── client.ts    # Trading212 API client
-│   │   └── types.ts    # TypeScript interfaces
+│   │   └── types.ts    # Zod schemas + TypeScript types
 │   ├── tools/
 │   │   ├── accounts.ts # Account tools
 │   │   ├── positions.ts # Position tools
 │   │   └── orders.ts   # Order tools
 │   └── utils/
 │       ├── errors.ts    # Error handling
+│       ├── mcp.ts       # MCP helpers
 │       └── pagination.ts # Pagination utilities
 ├── package.json
 ├── tsconfig.json
@@ -441,7 +247,7 @@ The Inspector provides an interactive UI to test all available tools.
 
 Contributions are welcome. Please ensure:
 
-- All tests pass (`npm run build`)
+- All tests pass (`npm test`)
 - Code is properly typed
 - Tools have clear descriptions
 

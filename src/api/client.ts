@@ -1,5 +1,5 @@
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig, AxiosResponse } from "axios";
-import type { AccountSummary, Position, Order, PaginationParams } from "./types.js";
+import type { AccountSummary, Position, Order } from "./types.js";
 
 const DEMO_BASE_URL = "https://demo.trading212.com";
 const LIVE_BASE_URL = "https://live.trading212.com";
@@ -26,50 +26,93 @@ export class Trading212Client {
         Authorization: `Basic ${auth}`,
         "Content-Type": "application/json",
       },
+      timeout: 30000,
     });
 
     this.client.interceptors.response.use(undefined, this.handleError.bind(this));
     this.client.interceptors.request.use(this.addRetryDelay.bind(this));
   }
 
-  private retryAfter: number = 0;
-  private lastRequestTime: number = 0;
-  private readonly MIN_REQUEST_INTERVAL = 5000;
+  private retryUntilMs: number | null = null;
+  private lastRequestTimeByBucket = new Map<string, number>();
+
+  private async sleep(ms: number): Promise<void> {
+    if (ms <= 0) return;
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private getBucket(method: string | undefined, url: string | undefined): { key: string; minIntervalMs: number } {
+    const m = (method ?? "get").toLowerCase();
+    const u = url ?? "";
+
+    if (m === "get" && u.startsWith("/equity/positions")) {
+      return { key: "get:/equity/positions", minIntervalMs: 1000 };
+    }
+    if (m === "get" && u.startsWith("/equity/account/summary")) {
+      return { key: "get:/equity/account/summary", minIntervalMs: 5000 };
+    }
+    if (m === "get" && u.startsWith("/equity/orders")) {
+      return { key: "get:/equity/orders", minIntervalMs: 5000 };
+    }
+    if (m === "post" && u.startsWith("/equity/orders/")) {
+      return { key: "post:/equity/orders", minIntervalMs: 2000 };
+    }
+    if (m === "delete" && u.startsWith("/equity/orders/")) {
+      return { key: "delete:/equity/orders", minIntervalMs: 2000 };
+    }
+
+    return { key: `${m}:${u}`, minIntervalMs: 2000 };
+  }
 
   private async addRetryDelay(config: InternalAxiosRequestConfig): Promise<InternalAxiosRequestConfig> {
     const now = Date.now();
-    const timeSinceLastRequest = now - this.lastRequestTime;
-    
-    if (timeSinceLastRequest < this.MIN_REQUEST_INTERVAL) {
-      const waitTime = this.MIN_REQUEST_INTERVAL - timeSinceLastRequest;
-      await new Promise(resolve => setTimeout(resolve, waitTime));
-    }
-    
-    this.lastRequestTime = Date.now();
-    
-    if (this.retryAfter > 0) {
-      const resetTime = this.retryAfter * 1000;
-      if (now < this.retryAfter) {
-        await new Promise(resolve => setTimeout(resolve, resetTime));
-      }
-      this.retryAfter = 0;
+
+    if (this.retryUntilMs && now < this.retryUntilMs) {
+      await this.sleep(this.retryUntilMs - now);
+      this.retryUntilMs = null;
     }
 
+    const bucket = this.getBucket(config.method, config.url);
+    const last = this.lastRequestTimeByBucket.get(bucket.key) ?? 0;
+    const elapsed = now - last;
+    if (elapsed < bucket.minIntervalMs) {
+      await this.sleep(bucket.minIntervalMs - elapsed);
+    }
+
+    this.lastRequestTimeByBucket.set(bucket.key, Date.now());
     return config;
   }
 
   private async handleError(error: AxiosError): Promise<AxiosResponse> {
     const status = error.response?.status;
-    
+
     if (status === 429) {
-      const retryAfterHeader = error.response?.headers["x-ratelimit-retry-after"];
-      this.retryAfter = retryAfterHeader ? parseInt(retryAfterHeader, 10) : 5;
-      
-      const waitTime = this.retryAfter * 1000;
-      await new Promise(resolve => setTimeout(resolve, waitTime));
-      this.retryAfter = 0;
-      
-      return this.client.request(error.config!);
+      const cfg = (error.config ?? {}) as InternalAxiosRequestConfig & { _t212RetryCount?: number };
+      cfg._t212RetryCount = (cfg._t212RetryCount ?? 0) + 1;
+      if (cfg._t212RetryCount > 2) {
+        throw new Error("Rate limit exceeded. Please wait before retrying.");
+      }
+
+      const headers = error.response?.headers as Record<string, unknown> | undefined;
+      const retryAfterRaw = headers?.["x-ratelimit-retry-after"];
+      const resetRaw = headers?.["x-ratelimit-reset"];
+
+      const retryAfterSeconds =
+        typeof retryAfterRaw === "string" ? parseInt(retryAfterRaw, 10) : typeof retryAfterRaw === "number" ? retryAfterRaw : NaN;
+      const resetUnix =
+        typeof resetRaw === "string" ? parseInt(resetRaw, 10) : typeof resetRaw === "number" ? resetRaw : NaN;
+
+      let waitMs = 5000;
+      if (Number.isFinite(retryAfterSeconds)) {
+        waitMs = Math.max(0, retryAfterSeconds * 1000);
+      } else if (Number.isFinite(resetUnix)) {
+        waitMs = Math.max(0, resetUnix * 1000 - Date.now());
+      }
+
+      this.retryUntilMs = Date.now() + waitMs;
+      await this.sleep(waitMs);
+
+      return this.client.request(cfg);
     }
 
     const data = error.response?.data as Record<string, unknown> | undefined;
@@ -85,6 +128,9 @@ export class Trading212Client {
       case 400:
         throw new Error(`Bad request: ${message || "Invalid parameters"}`);
       default:
+        if (!status) {
+          throw new Error(`Network error: ${error.message}`);
+        }
         throw new Error(`API error (${status}): ${message || error.message}`);
     }
   }
@@ -95,7 +141,10 @@ export class Trading212Client {
     const reset = headers["x-ratelimit-reset"];
 
     if (limit && remaining) {
-      console.error(`[Trading212] Rate limit: ${remaining}/${limit} (reset in ${reset}s)`);
+      const resetUnix = reset ? parseInt(reset, 10) : NaN;
+      const resetInSeconds = Number.isFinite(resetUnix) ? Math.max(0, resetUnix - Math.floor(Date.now() / 1000)) : undefined;
+      const resetStr = typeof resetInSeconds === "number" ? `${resetInSeconds}s` : "unknown";
+      console.error(`[Trading212] Rate limit: ${remaining}/${limit} (reset in ${resetStr})`);
     }
   }
 
@@ -105,27 +154,22 @@ export class Trading212Client {
     return response.data;
   }
 
-  async getPositions(pagination?: PaginationParams): Promise<{ positions: Position[]; cursor?: string }> {
-    const params = { limit: pagination?.limit ?? 20, cursor: pagination?.cursor };
+  async getPositions(input?: { ticker?: string }): Promise<{ positions: Position[] }> {
+    const params = input?.ticker ? { ticker: input.ticker } : undefined;
     const response = await this.client.get("/equity/positions", { params });
     this.updateRateLimitHeaders(response.headers as unknown as Record<string, string>);
-
-    const data = response.data;
-    const positions = Array.isArray(data) ? data : (data.items || data.positions || []);
-    return { positions, cursor: data.nextPagePath || data.cursor };
+    const positions = Array.isArray(response.data) ? response.data : [];
+    return { positions };
   }
 
-  async getPendingOrders(pagination?: PaginationParams): Promise<{ orders: Order[]; cursor?: string }> {
-    const params = { limit: pagination?.limit ?? 20, cursor: pagination?.cursor };
-    const response = await this.client.get("/equity/orders", { params });
+  async getPendingOrders(): Promise<{ orders: Order[] }> {
+    const response = await this.client.get("/equity/orders");
     this.updateRateLimitHeaders(response.headers as unknown as Record<string, string>);
-
-    const data = response.data;
-    const orders = Array.isArray(data) ? data : (data.items || data.orders || []);
-    return { orders, cursor: data.nextPagePath || data.cursor };
+    const orders = Array.isArray(response.data) ? response.data : [];
+    return { orders };
   }
 
-  async getOrder(orderId: string): Promise<Order> {
+  async getOrder(orderId: string | number): Promise<Order> {
     const response = await this.client.get(`/equity/orders/${orderId}`);
     this.updateRateLimitHeaders(response.headers as unknown as Record<string, string>);
     return response.data;
@@ -186,7 +230,7 @@ export class Trading212Client {
     return response.data;
   }
 
-  async cancelOrder(orderId: string): Promise<{ success: boolean }> {
+  async cancelOrder(orderId: string | number): Promise<{ success: boolean }> {
     const response = await this.client.delete(`/equity/orders/${orderId}`);
     this.updateRateLimitHeaders(response.headers as unknown as Record<string, string>);
     return response.data;
@@ -194,7 +238,12 @@ export class Trading212Client {
 }
 
 export function createClient(config: Trading212ClientConfig): Trading212Client {
-  if (singletonClient && singletonConfig?.apiKey === config.apiKey && singletonConfig?.secret === config.secret) {
+  if (
+    singletonClient &&
+    singletonConfig?.apiKey === config.apiKey &&
+    singletonConfig?.secret === config.secret &&
+    singletonConfig?.liveMode === config.liveMode
+  ) {
     return singletonClient;
   }
   singletonClient = new Trading212Client(config);

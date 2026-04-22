@@ -22,7 +22,7 @@ export function getActionableSuggestion(error: unknown): string {
     return "Verify the instrument ticker or order ID is correct.";
   }
   if (message.includes("Rate limit")) {
-    return "Wait before retrying. Consider using cursor pagination to reduce requests.";
+    return "Wait before retrying and reduce request frequency.";
   }
   if (message.includes("Bad request")) {
     return "Check order parameters: quantity must be positive, prices must be valid.";
