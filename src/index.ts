@@ -12,7 +12,7 @@ const SERVER_VERSION = "1.0.0";
 async function main() {
   const apiKey = process.env.TRADING212_API_KEY;
   const secret = process.env.TRADING212_SECRET;
-  const liveMode = process.env.TRADING212_LIVE_MODE === "true";
+  const liveMode = process.env.TRADING212_LIVE_MODE !== "false";
 
   if (!apiKey || !secret) {
     console.error("Error: TRADING212_API_KEY and TRADING212_SECRET must be set in .env file");
@@ -44,7 +44,7 @@ async function main() {
   });
 
   await server.connect(transport);
-  console.error(`[Trading212 MCP] Server running on stdio (demo mode: ${!liveMode})`);
+  console.error(`[Trading212 MCP] Server running on stdio (live mode: ${liveMode})`);
 }
 
 main().catch((error) => {
